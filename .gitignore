@@ -1,0 +1,9 @@
+node_modules/
+.env
+.env.local
+uploads/
+*.log
+npm-debug.log*
+tests/.mongo-uri.tmp
+coverage/
+dist/
