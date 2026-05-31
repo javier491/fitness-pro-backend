@@ -4,6 +4,7 @@ const Admin = require('../models/Admin');
 const Coach = require('../models/Coach');
 const Client = require('../models/Client');
 const Exercise = require('../models/Exercise');
+const CheckIn = require('../models/CheckIn');
 const { syncAll } = require('../services/exerciseDB');
 
 const adminAuth = async (req, res, next) => {
@@ -19,20 +20,25 @@ const adminAuth = async (req, res, next) => {
   } catch { res.status(401).json({ message: 'Token inválido' }); }
 };
 
-// Login del admin (se crea manualmente o via seed)
+/* ── AUTH ── */
+router.get('/needs-setup', async (req, res, next) => {
+  try {
+    const exists = await Admin.findOne();
+    res.json({ needsSetup: !exists });
+  } catch (err) { next(err); }
+});
+
 router.post('/login', async (req, res, next) => {
   try {
     const { email, password } = req.body;
     const admin = await Admin.findOne({ email });
-    if (!admin || !(await admin.comparePassword(password))) {
+    if (!admin || !(await admin.comparePassword(password)))
       return res.status(401).json({ message: 'Credenciales incorrectas' });
-    }
     const token = jwt.sign({ id: admin._id, role: 'admin' }, process.env.JWT_SECRET, { expiresIn: '7d' });
     res.json({ token, admin });
   } catch (err) { next(err); }
 });
 
-// Crear primer admin (solo si no existe ninguno, o con ADMIN_SECRET)
 router.post('/setup', async (req, res, next) => {
   try {
     const { email, password, secret } = req.body;
@@ -44,22 +50,74 @@ router.post('/setup', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Listar coaches
+/* ── STATS ── */
+router.get('/stats', adminAuth, async (req, res, next) => {
+  try {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const weekStart = new Date(today); weekStart.setDate(today.getDate() - today.getDay());
+
+    const [totalCoaches, activeCoaches, totalClients, activeClients,
+      totalExercises, checkinsToday, checkinsWeek, totalCheckins] = await Promise.all([
+      Coach.countDocuments(),
+      Coach.countDocuments({ isActive: true }),
+      Client.countDocuments(),
+      Client.countDocuments({ isActive: true }),
+      Exercise.countDocuments(),
+      CheckIn.countDocuments({ date: { $gte: today } }),
+      CheckIn.countDocuments({ date: { $gte: weekStart } }),
+      CheckIn.countDocuments(),
+    ]);
+
+    res.json({ totalCoaches, activeCoaches, totalClients, activeClients,
+      totalExercises, checkinsToday, checkinsWeek, totalCheckins });
+  } catch (err) { next(err); }
+});
+
+/* ── COACHES ── */
 router.get('/coaches', adminAuth, async (req, res, next) => {
   try {
     const { page = 1, limit = 20, search } = req.query;
-    const filter = {};
-    if (search) filter.name = { $regex: search, $options: 'i' };
+    const match = {};
+    if (search) match.name = { $regex: search, $options: 'i' };
     const skip = (Number(page) - 1) * Number(limit);
+
     const [data, total] = await Promise.all([
-      Coach.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
-      Coach.countDocuments(filter),
+      Coach.aggregate([
+        { $match: match },
+        { $sort: { createdAt: -1 } },
+        { $skip: skip },
+        { $limit: Number(limit) },
+        { $lookup: {
+            from: 'clients',
+            let: { coachId: '$_id' },
+            pipeline: [
+              { $match: { $expr: { $eq: ['$coach', '$$coachId'] } } },
+              { $group: { _id: '$isActive', count: { $sum: 1 } } },
+            ],
+            as: 'clientStats',
+        }},
+        { $addFields: {
+            totalClients: { $sum: '$clientStats.count' },
+            activeClients: {
+              $ifNull: [
+                { $arrayElemAt: [
+                  { $filter: { input: '$clientStats', cond: { $eq: ['$$this._id', true] } } },
+                  0
+                ]},
+                { count: 0 }
+              ]
+            },
+        }},
+        { $addFields: { activeClients: '$activeClients.count' } },
+        { $project: { password: 0, clientStats: 0 } },
+      ]),
+      Coach.countDocuments(match),
     ]);
+
     res.json({ data, total, page: Number(page), totalPages: Math.ceil(total / Number(limit)) });
   } catch (err) { next(err); }
 });
 
-// Activar / desactivar coach
 router.put('/coaches/:id/toggle', adminAuth, async (req, res, next) => {
   try {
     const coach = await Coach.findById(req.params.id);
@@ -70,21 +128,47 @@ router.put('/coaches/:id/toggle', adminAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// Stats generales
-router.get('/stats', adminAuth, async (req, res, next) => {
+/* ── EJERCICIOS ── */
+router.get('/exercises', adminAuth, async (req, res, next) => {
   try {
-    const [totalCoaches, activeCoaches, totalClients, activeClients, totalExercises] = await Promise.all([
-      Coach.countDocuments(),
-      Coach.countDocuments({ isActive: true }),
-      Client.countDocuments(),
-      Client.countDocuments({ isActive: true }),
-      Exercise.countDocuments(),
+    const { search, bodyPart, page = 1, limit = 20 } = req.query;
+    const filter = {};
+    if (search) filter.$or = [
+      { name: { $regex: search, $options: 'i' } },
+      { nameEN: { $regex: search, $options: 'i' } },
+    ];
+    if (bodyPart) filter.bodyPart = bodyPart;
+    const skip = (Number(page) - 1) * Number(limit);
+    const [data, total] = await Promise.all([
+      Exercise.find(filter).sort({ name: 1 }).skip(skip).limit(Number(limit)),
+      Exercise.countDocuments(filter),
     ]);
-    res.json({ totalCoaches, activeCoaches, totalClients, activeClients, totalExercises });
+    res.json({ data, total, page: Number(page), totalPages: Math.ceil(total / Number(limit)) });
   } catch (err) { next(err); }
 });
 
-// Sincronizar ejercicios desde GitHub dataset
+router.post('/exercises', adminAuth, async (req, res, next) => {
+  try {
+    const exercise = await Exercise.create({ ...req.body, isCustom: true });
+    res.status(201).json(exercise);
+  } catch (err) { next(err); }
+});
+
+router.put('/exercises/:id', adminAuth, async (req, res, next) => {
+  try {
+    const exercise = await Exercise.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    if (!exercise) return res.status(404).json({ message: 'Ejercicio no encontrado' });
+    res.json(exercise);
+  } catch (err) { next(err); }
+});
+
+router.delete('/exercises/:id', adminAuth, async (req, res, next) => {
+  try {
+    await Exercise.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Ejercicio eliminado' });
+  } catch (err) { next(err); }
+});
+
 router.post('/exercises/sync', adminAuth, async (req, res, next) => {
   try {
     const synced = await syncAll();
