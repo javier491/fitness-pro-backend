@@ -40,37 +40,42 @@ const muscleES = {
 };
 
 const t = (map, v) => (v ? (map[v.toLowerCase()] ?? v) : v);
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// Traduce un array de instrucciones en inglés a español (Google Translate no oficial)
-const translateInstructions = async (instructions) => {
-  if (!instructions?.length) return [];
+// Traduce un bloque de textos juntos (unidos por \n) en grupos de 25
+const translateBatch = async (texts) => {
+  if (!texts?.length) return texts;
   try {
     const { translate } = await import('@vitalets/google-translate-api');
-    const results = [];
-    for (const step of instructions) {
+    const results = new Array(texts.length);
+    const CHUNK = 25;
+    for (let i = 0; i < texts.length; i += CHUNK) {
+      const chunk = texts.slice(i, i + CHUNK);
       try {
-        const { text } = await translate(step, { from: 'en', to: 'es' });
-        results.push(text);
+        const { text } = await translate(chunk.join('\n'), { from: 'en', to: 'es' });
+        const parts = text.split('\n');
+        chunk.forEach((orig, j) => { results[i + j] = parts[j]?.trim() || orig; });
       } catch {
-        results.push(step); // mantiene inglés si falla una línea
+        chunk.forEach((orig, j) => { results[i + j] = orig; });
       }
+      await sleep(400); // evita rate limit
     }
     return results;
   } catch {
-    return instructions; // si el módulo no carga, devuelve inglés
+    return texts;
   }
 };
 
-const toExercise = async (raw) => {
-  const instructions = await translateInstructions(raw.instructions);
+const toExercise = (raw, nameES) => {
   return {
     externalId: raw.id,
-    name: raw.name,
+    name: nameES || raw.name,
+    nameEN: raw.name, // conserva el nombre en inglés por referencia
     bodyPart: t(bodyPartES, raw.category),
     equipment: t(equipmentES, raw.equipment),
     target: t(muscleES, raw.primaryMuscles?.[0]),
     secondaryMuscles: (raw.secondaryMuscles || []).map(m => t(muscleES, m)),
-    instructions,
+    instructions: raw.instructions || [],
     gifUrl: raw.images?.[0] ? `${IMG_BASE}/${raw.images[0]}` : null,
   };
 };
@@ -78,12 +83,17 @@ const toExercise = async (raw) => {
 const syncAll = async () => {
   const { data } = await axios.get(DATASET_URL, { timeout: 30000 });
 
+  // 1. Traducir todos los nombres en batch
+  console.log(`[Sync] Traduciendo ${data.length} nombres...`);
+  const namesEN = data.map(r => r.name);
+  const namesES = await translateBatch(namesEN);
+
+  // 2. Construir documentos y hacer upsert
   let upserted = 0;
-  // Procesa en lotes para no saturar la API de traducción
-  const BATCH = 20;
+  const BATCH = 50;
   for (let i = 0; i < data.length; i += BATCH) {
     const batch = data.slice(i, i + BATCH);
-    const docs = await Promise.all(batch.map(toExercise));
+    const docs = batch.map((raw, j) => toExercise(raw, namesES[i + j]));
     const ops = docs.map(doc => ({
       updateOne: {
         filter: { externalId: doc.externalId },

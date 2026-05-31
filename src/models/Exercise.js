@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 
 const exerciseSchema = new mongoose.Schema({
   externalId: { type: String, unique: true, sparse: true },
-  name: { type: String, required: true },
+  name: { type: String, required: true },   // nombre en español
+  nameEN: { type: String },                 // nombre original en inglés
   bodyPart: { type: String },
   equipment: { type: String },
   gifUrl: { type: String },
