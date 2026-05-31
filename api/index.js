@@ -8,8 +8,13 @@ let connected = false;
 
 module.exports = async (req, res) => {
   if (!connected) {
-    await connectDB();
-    connected = true;
+    try {
+      await connectDB();
+      connected = true;
+    } catch (err) {
+      console.error('[DB] Error al conectar:', err.message);
+      // Continúa de todas formas — la página de estado mostrará DB desconectada
+    }
   }
   return app(req, res);
 };

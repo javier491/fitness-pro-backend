@@ -18,14 +18,13 @@ router.use(protect, coachOnly);
 
 router.get('/', async (req, res, next) => {
   try {
-    const { search, isActive, page = 1, limit = 20 } = req.query;
+    const { search, page = 1, limit = 20 } = req.query;
     const filter = { coach: req.user._id };
-    if (isActive !== undefined) filter.isActive = isActive === 'true';
     if (search) filter.name = { $regex: search, $options: 'i' };
 
     const skip = (Number(page) - 1) * Number(limit);
     const [clients, total] = await Promise.all([
-      Client.find(filter).sort({ name: 1 }).skip(skip).limit(Number(limit)),
+      Client.find(filter).sort({ isActive: -1, name: 1 }).skip(skip).limit(Number(limit)),
       Client.countDocuments(filter),
     ]);
 
@@ -71,10 +70,25 @@ router.get('/:id', async (req, res, next) => {
 
 router.put('/:id', async (req, res, next) => {
   try {
+    const { email, password, ...updates } = req.body; // email bloqueado
+
+    const client = await Client.findOne({ _id: req.params.id, coach: req.user._id });
+    if (!client) return res.status(404).json({ message: 'Cliente no encontrado' });
+
+    Object.assign(client, updates);
+    if (password) client.password = password; // pre('save') lo hashea
+
+    await client.save();
+    res.json(client);
+  } catch (err) { next(err); }
+});
+
+router.patch('/:id/reactivate', async (req, res, next) => {
+  try {
     const client = await Client.findOneAndUpdate(
       { _id: req.params.id, coach: req.user._id },
-      req.body,
-      { new: true, runValidators: true }
+      { isActive: true },
+      { new: true }
     );
     if (!client) return res.status(404).json({ message: 'Cliente no encontrado' });
     res.json(client);

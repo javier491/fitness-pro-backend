@@ -14,13 +14,15 @@ const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:5173')
   .map(o => o.trim());
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-app.use(cors({
+const corsOptions = {
   origin: (origin, cb) => {
     if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
     cb(new Error('No permitido por CORS'));
   },
   credentials: true,
-}));
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // preflight para todos los endpoints
 app.use(morgan('dev'));
 app.use(express.json({ limit: '10mb' }));
 app.use(apiLimiter);
