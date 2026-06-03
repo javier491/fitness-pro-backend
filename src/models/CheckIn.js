@@ -1,11 +1,12 @@
 const mongoose = require('mongoose');
 
 const exerciseLogSchema = new mongoose.Schema({
-  exercise: { type: mongoose.Schema.Types.ObjectId, ref: 'Exercise' },
+  exercise:     { type: mongoose.Schema.Types.ObjectId, ref: 'Exercise' },
   setsCompleted: Number,
-  repsPerSet: [Number],
+  repsPerSet:   [Number],
   weightPerSet: [Number],
-  notes: String,
+  weightUnit:   { type: String, enum: ['kg', 'lbs'], default: 'kg' },
+  notes:        String,
 }, { _id: false });
 
 const checkInSchema = new mongoose.Schema({

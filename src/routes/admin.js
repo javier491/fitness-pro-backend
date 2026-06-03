@@ -169,6 +169,58 @@ router.delete('/exercises/:id', adminAuth, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.get('/exercises/metrics', adminAuth, async (req, res, next) => {
+  try {
+    const ClientRoutine = require('../models/ClientRoutine');
+
+    // Cuántas veces aparece cada ejercicio en rutinas activas
+    const usageInRoutines = await ClientRoutine.aggregate([
+      { $match: { isActive: true } },
+      { $unwind: '$days' },
+      { $unwind: '$days.exercises' },
+      { $group: { _id: '$days.exercises.exercise', routineCount: { $sum: 1 } } },
+    ]);
+
+    // Cuántas veces se completó cada ejercicio en check-ins
+    const usageInCheckins = await CheckIn.aggregate([
+      { $unwind: '$exerciseLogs' },
+      { $group: { _id: '$exerciseLogs.exercise', checkinCount: { $sum: 1 } } },
+    ]);
+
+    const checkinMap = Object.fromEntries(usageInCheckins.map(r => [r._id?.toString(), r.checkinCount]));
+
+    // Unir con datos del ejercicio
+    const usedIds = usageInRoutines.map(r => r._id).filter(Boolean);
+    const [usedExercises, unusedExercises, byBodyPart] = await Promise.all([
+      Exercise.find({ _id: { $in: usedIds } }).select('name bodyPart equipment gifUrl'),
+      Exercise.find({ _id: { $nin: usedIds } }).select('name bodyPart equipment').limit(100),
+      Exercise.aggregate([
+        { $group: { _id: '$bodyPart', total: { $sum: 1 } } },
+        { $sort: { total: -1 } },
+      ]),
+    ]);
+
+    const exerciseMap = Object.fromEntries(usedExercises.map(e => [e._id.toString(), e]));
+
+    const ranked = usageInRoutines
+      .filter(r => r._id && exerciseMap[r._id.toString()])
+      .map(r => ({
+        exercise: exerciseMap[r._id.toString()],
+        routineCount: r.routineCount,
+        checkinCount: checkinMap[r._id.toString()] || 0,
+      }))
+      .sort((a, b) => b.routineCount - a.routineCount);
+
+    res.json({
+      topUsed:    ranked.slice(0, 20),
+      unused:     unusedExercises,
+      byBodyPart,
+      totalUsed:  usedIds.length,
+      totalUnused: await Exercise.countDocuments({ _id: { $nin: usedIds } }),
+    });
+  } catch (err) { next(err); }
+});
+
 router.post('/exercises/sync', adminAuth, async (req, res, next) => {
   try {
     const synced = await syncAll();
