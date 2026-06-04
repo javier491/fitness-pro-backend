@@ -62,6 +62,35 @@ router.post('/login/client',
   }
 );
 
+// Login unificado — detecta automáticamente si es coach o cliente
+router.post('/login',
+  body('email').isEmail(),
+  body('password').notEmpty(),
+  async (req, res, next) => {
+    try {
+      const { email, password, fcmToken } = req.body;
+
+      const coach = await Coach.findOne({ email }).select('+password');
+      if (coach && await coach.comparePassword(password)) {
+        if (fcmToken) { coach.fcmToken = fcmToken; await coach.save(); }
+        const token = signToken(coach._id, 'coach');
+        coach.password = undefined;
+        return res.json({ token, user: coach, role: 'coach' });
+      }
+
+      const client = await Client.findOne({ email }).select('+password');
+      if (client && await client.comparePassword(password)) {
+        if (fcmToken) { client.fcmToken = fcmToken; await client.save(); }
+        const token = signToken(client._id, 'client');
+        client.password = undefined;
+        return res.json({ token, user: client, role: 'client' });
+      }
+
+      res.status(401).json({ message: 'Credenciales incorrectas' });
+    } catch (err) { next(err); }
+  }
+);
+
 router.get('/me', protect, (req, res) => res.json({ user: req.user, role: req.role }));
 
 // Cambiar contraseña (autenticado)
