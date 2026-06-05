@@ -78,7 +78,7 @@ app.get('/', (req, res) => {
     { method: 'GET',  path: '/api/admin/stats',         desc: 'Estadísticas admin' },
     { method: 'POST', path: '/api/admin/exercises/sync',desc: 'Sync ejercicios' },
   ];
-
+  //update the backend
   const methodColor = { GET: '#22c55e', POST: '#3b82f6', PUT: '#f59e0b', DELETE: '#ef4444', PATCH: '#a855f7' };
 
   const rows = endpoints.map(e => `
