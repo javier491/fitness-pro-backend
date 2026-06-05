@@ -66,16 +66,16 @@ const translateBatch = async (texts) => {
   }
 };
 
-const toExercise = (raw, nameES) => {
+const toExercise = (raw, nameES, instructionsES) => {
   return {
     externalId: raw.id,
     name: nameES || raw.name,
-    nameEN: raw.name, // conserva el nombre en inglés por referencia
+    nameEN: raw.name,
     bodyPart: t(bodyPartES, raw.category),
     equipment: t(equipmentES, raw.equipment),
     target: t(muscleES, raw.primaryMuscles?.[0]),
     secondaryMuscles: (raw.secondaryMuscles || []).map(m => t(muscleES, m)),
-    instructions: raw.instructions || [],
+    instructions: instructionsES || raw.instructions || [],
     gifUrl: raw.images?.[0] ? `${IMG_BASE}/${raw.images[0]}` : null,
   };
 };
@@ -83,17 +83,29 @@ const toExercise = (raw, nameES) => {
 const syncAll = async () => {
   const { data } = await axios.get(DATASET_URL, { timeout: 30000 });
 
-  // 1. Traducir todos los nombres en batch
+  // 1. Traducir nombres en batch
   console.log(`[Sync] Traduciendo ${data.length} nombres...`);
-  const namesEN = data.map(r => r.name);
-  const namesES = await translateBatch(namesEN);
+  const namesES = await translateBatch(data.map(r => r.name));
 
-  // 2. Construir documentos y hacer upsert
+  // 2. Traducir instrucciones: aplanar todas en un solo array, traducir, repartir
+  console.log('[Sync] Traduciendo instrucciones...');
+  const allInstructions = data.flatMap(r => r.instructions || []);
+  const allTranslated = await translateBatch(allInstructions);
+  // Repartir de vuelta a cada ejercicio
+  let offset = 0;
+  const instructionsByEx = data.map(r => {
+    const len = (r.instructions || []).length;
+    const translated = allTranslated.slice(offset, offset + len);
+    offset += len;
+    return translated;
+  });
+
+  // 3. Construir documentos y hacer upsert
   let upserted = 0;
   const BATCH = 50;
   for (let i = 0; i < data.length; i += BATCH) {
     const batch = data.slice(i, i + BATCH);
-    const docs = batch.map((raw, j) => toExercise(raw, namesES[i + j]));
+    const docs = batch.map((raw, j) => toExercise(raw, namesES[i + j], instructionsByEx[i + j]));
     const ops = docs.map(doc => ({
       updateOne: {
         filter: { externalId: doc.externalId },
@@ -109,4 +121,4 @@ const syncAll = async () => {
 
 const getBodyParts = () => Exercise.distinct('bodyPart');
 
-module.exports = { syncAll, getBodyParts };
+module.exports = { syncAll, getBodyParts, translateBatch };

@@ -5,7 +5,7 @@ const Coach = require('../models/Coach');
 const Client = require('../models/Client');
 const Exercise = require('../models/Exercise');
 const CheckIn = require('../models/CheckIn');
-const { syncAll } = require('../services/exerciseDB');
+const { syncAll, translateBatch } = require('../services/exerciseDB');
 
 const adminAuth = async (req, res, next) => {
   const token = req.headers.authorization?.startsWith('Bearer')
@@ -225,6 +225,52 @@ router.post('/exercises/sync', adminAuth, async (req, res, next) => {
   try {
     const synced = await syncAll();
     res.json({ synced, total: await Exercise.countDocuments() });
+  } catch (err) { next(err); }
+});
+
+// Detecta instrucciones en inglés y las traduce al español, procesando en lotes
+const englishRegex = /\b(the|and|with|your|you|keep|place|position|hold|perform|slowly|begin|start|return)\b/i;
+
+router.post('/exercises/translate-instructions', adminAuth, async (req, res, next) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 10, 50);
+
+    const allWithInstructions = await Exercise.find(
+      { 'instructions.0': { $exists: true } }
+    ).select('_id instructions');
+
+    const needsTranslation = allWithInstructions.filter(ex =>
+      ex.instructions.some(s => englishRegex.test(s))
+    );
+
+    if (!needsTranslation.length) {
+      return res.json({ translated: 0, remaining: 0 });
+    }
+
+    const batch = needsTranslation.slice(0, limit);
+    const flatInstructions = batch.flatMap(ex => ex.instructions);
+    const flatTranslated = await translateBatch(flatInstructions);
+
+    const anyChanged = flatTranslated.some((t, i) => t !== flatInstructions[i]);
+    if (!anyChanged) {
+      return res.json({ translated: 0, remaining: needsTranslation.length, translationFailed: true });
+    }
+
+    let offset = 0;
+    const bulkOps = batch.map(ex => {
+      const len = ex.instructions.length;
+      const translated = flatTranslated.slice(offset, offset + len);
+      offset += len;
+      return {
+        updateOne: {
+          filter: { _id: ex._id },
+          update: { $set: { instructions: translated } },
+        },
+      };
+    });
+
+    await Exercise.bulkWrite(bulkOps);
+    res.json({ translated: batch.length, remaining: needsTranslation.length - batch.length });
   } catch (err) { next(err); }
 });
 

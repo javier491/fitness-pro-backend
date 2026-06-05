@@ -3,10 +3,12 @@ const mongoose = require('mongoose');
 const exerciseEntrySchema = new mongoose.Schema({
   exercise:    { type: mongoose.Schema.Types.ObjectId, ref: 'Exercise', required: true },
   sets:        { type: Number, required: true },
-  reps:        { type: String, default: '12' },      // valor por defecto para todas las series
-  repsPerSet:  [{ type: String }],                   // objetivo individual por serie
+  reps:        { type: String, default: '12' },
+  repsPerSet:  [{ type: String }],
   restSeconds: { type: Number, default: 60 },
   weightUnit:  { type: String, enum: ['kg', 'lbs'], default: 'kg' },
+  section:     { type: String, default: 'Efectivas' },   // grupo dentro del día
+  technique:   { type: String, default: 'Regular' },     // método de ejecución
   notes:       { type: String },
   order:       { type: Number, default: 0 },
 }, { _id: false });
