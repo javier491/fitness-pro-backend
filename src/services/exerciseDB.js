@@ -42,28 +42,33 @@ const muscleES = {
 const t = (map, v) => (v ? (map[v.toLowerCase()] ?? v) : v);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// Traduce un bloque de textos juntos (unidos por \n) en grupos de 25
+const decodeHTML = (s) =>
+  s.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+   .replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+
+// Traduce un texto usando MyMemory API (funciona desde cualquier servidor)
+const translateOne = async (text) => {
+  const params = new URLSearchParams({ q: text, langpair: 'en|es' });
+  const email = process.env.TRANSLATION_EMAIL;
+  if (email) params.append('de', email);
+  const res = await axios.get(`https://api.mymemory.translated.net/get?${params}`, { timeout: 6000 });
+  if (res.data?.responseStatus === 200) return decodeHTML(res.data.responseData.translatedText);
+  return text;
+};
+
+// Traduce un array de textos uno por uno
 const translateBatch = async (texts) => {
   if (!texts?.length) return texts;
-  try {
-    const { translate } = await import('@vitalets/google-translate-api');
-    const results = new Array(texts.length);
-    const CHUNK = 25;
-    for (let i = 0; i < texts.length; i += CHUNK) {
-      const chunk = texts.slice(i, i + CHUNK);
-      try {
-        const { text } = await translate(chunk.join('\n'), { from: 'en', to: 'es' });
-        const parts = text.split('\n');
-        chunk.forEach((orig, j) => { results[i + j] = parts[j]?.trim() || orig; });
-      } catch {
-        chunk.forEach((orig, j) => { results[i + j] = orig; });
-      }
-      await sleep(400); // evita rate limit
+  const results = [];
+  for (const text of texts) {
+    try {
+      results.push(await translateOne(text));
+    } catch {
+      results.push(text);
     }
-    return results;
-  } catch {
-    return texts;
+    await sleep(120);
   }
+  return results;
 };
 
 const toExercise = (raw, nameES, instructionsES) => {

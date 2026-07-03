@@ -42,9 +42,24 @@ router.get('/sync', coachOnly, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.get('/translation-status', coachOnly, async (req, res, next) => {
+  try {
+    const allWithInstructions = await Exercise.find(
+      { 'instructions.0': { $exists: true } }
+    ).select('instructions');
+
+    const total = allWithInstructions.length;
+    const pending = allWithInstructions.filter(ex =>
+      ex.instructions.some(s => englishRegex.test(s))
+    ).length;
+
+    res.json({ pending, total, done: total - pending });
+  } catch (err) { next(err); }
+});
+
 router.post('/translate-instructions', coachOnly, async (req, res, next) => {
   try {
-    const limit = Math.min(Number(req.query.limit) || 10, 50);
+    const limit = Math.min(Number(req.query.limit) || 3, 10);
 
     const allWithInstructions = await Exercise.find(
       { 'instructions.0': { $exists: true } }

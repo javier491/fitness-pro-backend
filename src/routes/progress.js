@@ -1,8 +1,59 @@
 const router = require('express').Router();
+const mongoose = require('mongoose');
 const { protect, clientOnly, coachOnly } = require('../middleware/auth');
 const CheckIn = require('../models/CheckIn');
 const BodyMetric = require('../models/BodyMetric');
 const Client = require('../models/Client');
+
+const periodToDate = (period) => {
+  if (!period || period === 'all') return null;
+  const days = { '1m': 30, '3m': 90, '6m': 180, '1y': 365 }[period];
+  if (!days) return null;
+  const d = new Date();
+  d.setDate(d.getDate() - days);
+  return d;
+};
+
+const getExerciseList = async (clientId) => {
+  return CheckIn.aggregate([
+    { $match: { client: new mongoose.Types.ObjectId(clientId) } },
+    { $unwind: '$exerciseLogs' },
+    { $match: { 'exerciseLogs.exercise': { $exists: true } } },
+    { $group: {
+      _id: '$exerciseLogs.exercise',
+      lastUsed: { $max: '$date' },
+      count:    { $sum: 1 },
+    }},
+    { $sort: { lastUsed: -1 } },
+    { $lookup: { from: 'exercises', localField: '_id', foreignField: '_id', as: 'ex' } },
+    { $unwind: '$ex' },
+    { $project: { _id: 1, name: '$ex.name', bodyPart: '$ex.bodyPart', count: 1, lastUsed: 1 } },
+  ]);
+};
+
+const getExerciseChart = async (clientId, exerciseId, period) => {
+  const fromDate = periodToDate(period);
+  const checkins = await CheckIn.find({
+    client: clientId,
+    'exerciseLogs.exercise': exerciseId,
+    ...(fromDate && { date: { $gte: fromDate } }),
+  }).select('date exerciseLogs').sort({ date: 1 });
+
+  return checkins.map(ci => {
+    const log = ci.exerciseLogs.find(l => l.exercise?.toString() === exerciseId.toString());
+    if (!log) return null;
+    const validReps    = (log.repsPerSet    || []).filter(v => v != null && v > 0);
+    const validWeights = (log.weightPerSet  || []).filter(v => v != null && v > 0);
+    const avg = (arr) => arr.length ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : null;
+    return {
+      date:      ci.date.toISOString().split('T')[0],
+      avgReps:   avg(validReps),
+      avgWeight: avg(validWeights),
+      maxWeight: validWeights.length ? Math.max(...validWeights) : null,
+      sets:      log.setsCompleted || validReps.length || null,
+    };
+  }).filter(Boolean);
+};
 
 const getWeekKey = (date) => {
   const d = new Date(date);
@@ -141,6 +192,36 @@ router.get('/client/:clientId/pdf', protect, coachOnly, async (req, res, next) =
     });
 
     doc.end();
+  } catch (err) { next(err); }
+});
+
+// ── Ejercicios del historial de un cliente (para selector) ──────────────────
+router.get('/my/exercises', protect, clientOnly, async (req, res, next) => {
+  try {
+    const list = await getExerciseList(req.user._id);
+    res.json(list);
+  } catch (err) { next(err); }
+});
+
+router.get('/client/:clientId/exercises', protect, coachOnly, async (req, res, next) => {
+  try {
+    const list = await getExerciseList(req.params.clientId);
+    res.json(list);
+  } catch (err) { next(err); }
+});
+
+// ── Datos de la gráfica de progreso de un ejercicio ─────────────────────────
+router.get('/my/exercise/:exerciseId', protect, clientOnly, async (req, res, next) => {
+  try {
+    const data = await getExerciseChart(req.user._id, req.params.exerciseId, req.query.period);
+    res.json(data);
+  } catch (err) { next(err); }
+});
+
+router.get('/client/:clientId/exercise/:exerciseId', protect, coachOnly, async (req, res, next) => {
+  try {
+    const data = await getExerciseChart(req.params.clientId, req.params.exerciseId, req.query.period);
+    res.json(data);
   } catch (err) { next(err); }
 });
 
