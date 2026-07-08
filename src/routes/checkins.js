@@ -29,29 +29,37 @@ router.post('/', protect, clientOnly, async (req, res, next) => {
     const currentDay = routine.days.find(d => d.dayNumber === currentDayNumber);
     const isRestDay = currentDay?.isRestDay || false;
 
-    // Streak: based on last check-in date; reset if >5 days inactive
+    // Fecha de la sesión: el cliente puede enviar una fecha pasada (olvido de guardar)
+    const sessionDate = req.body.date ? new Date(req.body.date) : new Date();
+    sessionDate.setHours(0, 0, 0, 0);
+
+    // No permitir fechas futuras
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const lastCheckin = await CheckIn.findOne({ client: req.user._id }).sort({ date: -1 });
+    if (sessionDate > today) sessionDate.setTime(today.getTime());
+
+    // Streak: basado en la última sesión guardada antes de esta fecha
+    const lastCheckin = await CheckIn.findOne({
+      client: req.user._id,
+      date: { $lt: sessionDate },
+    }).sort({ date: -1 });
+
     let newStreak = 1;
     if (lastCheckin) {
       const lastDate = new Date(lastCheckin.date);
       lastDate.setHours(0, 0, 0, 0);
-      const daysSinceLast = Math.floor((today - lastDate) / (1000 * 60 * 60 * 24));
+      const daysSinceLast = Math.floor((sessionDate - lastDate) / (1000 * 60 * 60 * 24));
       if (isRestDay) {
         newStreak = lastCheckin.streak || 1;
-      } else if (daysSinceLast === 0) {
-        newStreak = lastCheckin.streak || 1; // multiple completions same day
       } else if (daysSinceLast <= 5) {
         newStreak = (lastCheckin.streak || 0) + 1;
       }
-      // > 5 days: reset to 1
     }
 
     const checkin = await CheckIn.create({
       ...req.body,
       client: req.user._id,
-      date: today,
+      date: sessionDate,
       streak: newStreak,
     });
 
