@@ -274,21 +274,5 @@ router.post('/exercises/translate-instructions', adminAuth, async (req, res, nex
   } catch (err) { next(err); }
 });
 
-// ── Migración one-time: eliminar índice único legado de checkins ─────────────
-router.post('/migrations/drop-checkin-index', async (req, res, next) => {
-  try {
-    const mongoose = require('mongoose');
-    const col = mongoose.connection.collection('checkins');
-    const indexes = await col.indexes();
-    const uniqueIndexes = indexes.filter(ix => ix.unique);
-    const dropped = [];
-    for (const ix of uniqueIndexes) {
-      if (ix.name === '_id_') continue;
-      await col.dropIndex(ix.name);
-      dropped.push(ix.name);
-    }
-    res.json({ allIndexes: indexes.map(ix => ({ name: ix.name, key: ix.key, unique: !!ix.unique })), dropped });
-  } catch (err) { next(err); }
-});
 
 module.exports = router;
