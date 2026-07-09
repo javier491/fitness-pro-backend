@@ -280,12 +280,14 @@ router.post('/migrations/drop-checkin-index', async (req, res, next) => {
     const mongoose = require('mongoose');
     const col = mongoose.connection.collection('checkins');
     const indexes = await col.indexes();
-    const legacy = indexes.find(ix => ix.unique && ix.key?.client != null && ix.key?.date != null);
-    if (!legacy) {
-      return res.json({ message: 'No se encontró índice único — ya fue eliminado o nunca existió', dropped: false });
+    const uniqueIndexes = indexes.filter(ix => ix.unique);
+    const dropped = [];
+    for (const ix of uniqueIndexes) {
+      if (ix.name === '_id_') continue;
+      await col.dropIndex(ix.name);
+      dropped.push(ix.name);
     }
-    await col.dropIndex(legacy.name);
-    res.json({ message: `Índice "${legacy.name}" eliminado correctamente`, dropped: true });
+    res.json({ allIndexes: indexes.map(ix => ({ name: ix.name, key: ix.key, unique: !!ix.unique })), dropped });
   } catch (err) { next(err); }
 });
 
