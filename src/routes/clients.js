@@ -136,16 +136,19 @@ router.get('/:id/metrics', async (req, res, next) => {
 
 router.get('/:id/checkins', async (req, res, next) => {
   try {
-    const { from, to, page = 1, limit = 30 } = req.query;
+    const { from, to, page = 1, limit = 30, routineDayNumber } = req.query;
     const filter = { client: req.params.id };
     if (from || to) {
       filter.date = {};
       if (from) filter.date.$gte = new Date(from);
-      if (to) filter.date.$lte = new Date(to);
+      if (to)   filter.date.$lte = new Date(to);
     }
+    if (routineDayNumber) filter.routineDayNumber = Number(routineDayNumber);
     const skip = (Number(page) - 1) * Number(limit);
     const [data, total] = await Promise.all([
-      CheckIn.find(filter).sort({ date: -1 }).skip(skip).limit(Number(limit)).populate('routine', 'name'),
+      CheckIn.find(filter).sort({ date: -1 }).skip(skip).limit(Number(limit))
+        .populate('routine', 'name')
+        .populate('exerciseLogs.exercise', 'name gifUrl'),
       CheckIn.countDocuments(filter),
     ]);
     res.json({ data, total, page: Number(page), totalPages: Math.ceil(total / Number(limit)) });
