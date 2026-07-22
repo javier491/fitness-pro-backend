@@ -1,12 +1,15 @@
 const mongoose = require('mongoose');
 
 const exerciseLogSchema = new mongoose.Schema({
-  exercise:     { type: mongoose.Schema.Types.ObjectId, ref: 'Exercise' },
+  exercise:      { type: mongoose.Schema.Types.ObjectId, ref: 'Exercise' },
   setsCompleted: Number,
-  repsPerSet:   [Number],
-  weightPerSet: [Number],
-  weightUnit:   { type: String, enum: ['kg', 'lbs'], default: 'kg' },
-  notes:        String,
+  repsPerSet:    [Number],
+  weightPerSet:  [Number],
+  weightUnit:    { type: String, enum: ['kg', 'lbs'], default: 'kg' },
+  notes:         String,
+  // Valores prescritos por el coach (guardados al momento del check-in)
+  setsTarget:    Number,
+  repsTarget:    [Number],
 }, { _id: false });
 
 const checkInSchema = new mongoose.Schema({
