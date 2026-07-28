@@ -8,8 +8,9 @@ const exerciseLogSchema = new mongoose.Schema({
   weightUnit:    { type: String, enum: ['kg', 'lbs'], default: 'kg' },
   notes:         String,
   // Valores prescritos por el coach (guardados al momento del check-in)
+  // repsTarget usa String porque el coach puede poner rangos como "6-8"
   setsTarget:    Number,
-  repsTarget:    [Number],
+  repsTarget:    [String],
 }, { _id: false });
 
 const checkInSchema = new mongoose.Schema({
