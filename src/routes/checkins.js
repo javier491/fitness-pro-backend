@@ -22,7 +22,7 @@ router.post('/', protect, clientOnly, async (req, res, next) => {
 
     // Status-based validation: only the current active day can be completed
     const currentDayNumber = routine.currentDayNumber || 1;
-    if (req.body.routineDayNumber !== currentDayNumber) {
+    if (Number(req.body.routineDayNumber) !== Number(currentDayNumber)) {
       return res.status(400).json({ message: 'Este día ya fue completado o no es el día actual' });
     }
 
