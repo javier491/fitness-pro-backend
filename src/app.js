@@ -30,7 +30,7 @@ app.use(apiLimiter);
 // Archivos estáticos (imágenes subidas)
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-app.use('/api/auth', authLimiter, require('./routes/auth'));
+app.use('/api/auth', require('./routes/auth'));
 app.use('/api/coaches', require('./routes/coaches'));
 app.use('/api/clients', require('./routes/clients'));
 app.use('/api/exercises', require('./routes/exercises'));
