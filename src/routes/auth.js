@@ -26,6 +26,22 @@ router.post('/register/coach',
   }
 );
 
+router.post('/register/client',
+  body('email').isEmail(),
+  body('password').isLength({ min: 6 }),
+  body('name').notEmpty(),
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+      const { name, email, password, goal } = req.body;
+      const client = await Client.create({ name, email, password, goal, selfCoached: true });
+      const token = signToken(client._id, 'client');
+      res.status(201).json({ token, user: client, role: 'client' });
+    } catch (err) { next(err); }
+  }
+);
+
 router.post('/login/coach',
   body('email').isEmail(),
   body('password').notEmpty(),

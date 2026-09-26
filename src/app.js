@@ -66,6 +66,7 @@ app.get('/', (req, res) => {
     { method: 'POST', path: '/api/auth/register/coach', desc: 'Registrar coach' },
     { method: 'POST', path: '/api/auth/login/coach',    desc: 'Login coach' },
     { method: 'POST', path: '/api/auth/login/client',   desc: 'Login cliente' },
+    { method: 'POST', path: '/api/auth/register/client',desc: 'Registro propio (sin coach)' },
     { method: 'GET',  path: '/api/auth/me',             desc: 'Perfil actual' },
     { method: 'GET',  path: '/api/clients',             desc: 'Listar clientes' },
     { method: 'POST', path: '/api/clients',             desc: 'Crear cliente' },

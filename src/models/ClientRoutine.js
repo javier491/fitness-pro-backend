@@ -21,7 +21,7 @@ const routineDaySchema = new mongoose.Schema({
 }, { _id: false });
 
 const clientRoutineSchema = new mongoose.Schema({
-  coach: { type: mongoose.Schema.Types.ObjectId, ref: 'Coach', required: true },
+  coach: { type: mongoose.Schema.Types.ObjectId, ref: 'Coach', required: false },
   client: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', required: true },
   fromTemplate: { type: mongoose.Schema.Types.ObjectId, ref: 'RoutineTemplate' },
   name: { type: String, required: true },

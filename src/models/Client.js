@@ -3,7 +3,8 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 
 const clientSchema = new mongoose.Schema({
-  coach: { type: mongoose.Schema.Types.ObjectId, ref: 'Coach', required: true },
+  coach: { type: mongoose.Schema.Types.ObjectId, ref: 'Coach', required: false },
+  selfCoached: { type: Boolean, default: false },
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, lowercase: true },
   password: { type: String, required: true, minlength: 6 },
